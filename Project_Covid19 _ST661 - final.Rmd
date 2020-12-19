@@ -1,0 +1,605 @@
+---
+title: "COVID-19 Daily Case Count"
+author: "Anastasia Jdanov | Manasi Tondulkar | Caeleen Danielle Richardson | Akanksha Raut"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r echo=FALSE}
+```
+## Covid-19 daily case counts, by age, medical status and transmission type
+
+## Results {.tabset}
+
+### Introduction
+1. Problem Statement: The aim of this project is to explore the spread of the COVID-19 pandemic within the Republic of Ireland, focusing on the gender ratio and age groups of confirmed cases, as well as the leading transmission type for the virus and the trends of cases per day.
+
+<hr/>
+
+2. Solution Overview: After Data Cleaning and a variety of R packages, counts and trends for the categories given within the dataset became apparent.
+
+<hr/>
+
+3. Goals: Analysis is divided into four parts to get deeper insights:<br>
+          1. To see the proportion of people that were hospitalised out of all of the confirmed cases. It was important to see the general trends that Covid-19 has had amongst the population. <br>
+          2. To figure out which age groups were the most and least prone to contracting Covid-19 within the hospitalised cases. <br>
+          3. To find the rate of growing positive cases in each month for different age groups and to identify the rate of growing positive cases in each month for different age groups. It was important to see which age group is more affected by the virus.<br>
+          4. To ascertain the leading transmission type of COVID-19, and to see whether it is reflective of the Heath and Safety Guidelines. <br>
+<hr/>
+
+### Packages Required
+Following packages were used:
+
+```{r message = FALSE, warning = FALSE}
+library(tidyverse)
+library(knitr)
+library(ggplot2)
+library(dplyr)
+library(plotly)
+library(gifski)
+library(png)
+library(gganimate)
+library(reshape2)
+library(tidyr)
+library(DT)
+library(tibble)
+library(kableExtra)
+library(viridis)
+library(deSolve)
+library(plotrix)
+```
+<hr/>
+
+### Data Preparation {.tabset}
+This section contains the steps undertaken to import, clean and prepare the given dataset for the data analysis.
+
+#### Data Import
+This dataset contains 38 variables with data for 10 months on a daily basis. The counts for COVID-19 cases include the following: 1. Confirmed cases, 2. Confirmed deaths, 3. Age ranges of cases, 4. Hospitalised cases, 5. Gender (Male, Female, and Unknown), 6. Travel Abroad, 7. Transmission of Covid-19 (Community Transmission, Close Contact).
+
+Data Import Code:
+```{r}
+data <- read.csv('http://opendata-geohive.hub.arcgis.com/datasets/d8eb52d56273413b84b0187a4e9117be_0.csv')
+class(data)
+```
+```{r}
+colnames(data)
+```
+```{r}
+dim(data)
+```
+<hr/>
+#### Data Cleaning
+
+
+Here the data was separated for the purpose of only having the data that needs to be analysed. 
+```{r}
+GeneralTrends<-data%>% dplyr::select( Date, ConfirmedCovidCases,TotalConfirmedCovidCases, ConfirmedCovidDeaths, TotalCovidDeaths)
+```
+
+The data had cumulative results which needed to be taken into account for the analysis; Daily Rates were found for the analysis by applying the mutate function, to the cumulative variables such as CovidCasesConfirmed, HospitalisedCovidCases, RequiringICUCovidCases, and HealthcareWorkersCovidCases. NAs were dropped in order to analyse the data effectively, and data that dealt with time-related values such as dates were converted into the appropriate formats for the upcoming analyses.
+
+```{r}
+covid2<-data%>% dplyr::select(FID,Date, ConfirmedCovidCases,TotalConfirmedCovidCases,ConfirmedCovidDeaths,TotalCovidDeaths,StatisticsProfileDate,CovidCasesConfirmed,HospitalisedCovidCases,RequiringICUCovidCases,HealthcareWorkersCovidCases,ClustersNotified)
+
+covid1<-covid2%>% drop_na()
+
+DailyRates<-covid1%>% dplyr::select(FID, StatisticsProfileDate, CovidCasesConfirmed, HospitalisedCovidCases, RequiringICUCovidCases, HealthcareWorkersCovidCases)
+
+DailyRates$StatisticsProfileDate<-as.Date(DailyRates$StatisticsProfileDate)
+
+
+DailyRates<-DailyRates%>%mutate(CovidCasesConfirmedIndiv = CovidCasesConfirmed - lag(CovidCasesConfirmed, default = CovidCasesConfirmed [1]))
+
+DailyRates<-DailyRates%>%mutate(HospitalisedCovidCasesIndiv = HospitalisedCovidCases - lag(HospitalisedCovidCases, default = HospitalisedCovidCases[1]))
+
+
+DailyRates<-DailyRates%>%mutate(RequiringICUCovidCasesIndiv = RequiringICUCovidCases - lag(RequiringICUCovidCases, default = RequiringICUCovidCases[1]))
+
+
+DailyRates<-DailyRates%>%mutate(HealthcareWorkersCovidCasesIndiv = HealthcareWorkersCovidCases - lag(HealthcareWorkersCovidCases, default = HealthcareWorkersCovidCases[1]))
+
+DailyRates2<-DailyRates%>% dplyr::select(StatisticsProfileDate, CovidCasesConfirmedIndiv, HospitalisedCovidCasesIndiv, RequiringICUCovidCasesIndiv, HealthcareWorkersCovidCasesIndiv)
+
+DailyRates2_long<-melt(DailyRates2, id="StatisticsProfileDate")
+
+DailyRates2_long$StatisticsProfileDate<-as.Date(DailyRates2_long$StatisticsProfileDate)
+
+clean <- na.omit(data)
+timeframe <- as.Date(clean$Date)
+```
+
+To further look into the individual groups affected by Covid-19, it was decided to investigate the monthly incidence rate; This was found by adding all individual cases by month. A new data frame was created in order for the graphs to be plotted.
+
+```{r}
+DailyRates3<-DailyRates%>% dplyr::select(StatisticsProfileDate, HospitalisedCovidCasesIndiv, RequiringICUCovidCasesIndiv, HealthcareWorkersCovidCasesIndiv)
+
+indvDate <- separate(DailyRates3, "StatisticsProfileDate", c("Year", "Month", "Day"), sep = "-")
+
+
+indvDate2<-indvDate%>% dplyr::select(Month, HospitalisedCovidCasesIndiv, RequiringICUCovidCasesIndiv, HealthcareWorkersCovidCasesIndiv)
+
+MonthlyData3<-subset(indvDate2, Month == "03")
+MonthlyData4<-subset(indvDate2, Month == "04")
+MonthlyData5<-subset(indvDate2, Month == "05")
+MonthlyData6<-subset(indvDate2, Month == "06")
+MonthlyData7<-subset(indvDate2, Month == "07")
+MonthlyData8<-subset(indvDate2, Month == "08")
+MonthlyData9<-subset(indvDate2, Month == "09")
+MonthlyData10<-subset(indvDate2, Month == "10")
+MonthlyData11<-subset(indvDate2, Month == "11")
+
+sum3<-c(sum(MonthlyData3$HospitalisedCovidCasesIndiv), sum(MonthlyData3$RequiringICUCovidCasesIndiv), sum(MonthlyData3$HealthcareWorkersCovidCasesIndiv))
+
+sum4<-c(sum(MonthlyData4$HospitalisedCovidCasesIndiv), sum(MonthlyData4$RequiringICUCovidCasesIndiv), sum(MonthlyData4$HealthcareWorkersCovidCasesIndiv))
+
+sum5<-c(sum(MonthlyData5$HospitalisedCovidCasesIndiv), sum(MonthlyData5$RequiringICUCovidCasesIndiv), sum(MonthlyData5$HealthcareWorkersCovidCasesIndiv))
+
+sum6<-c(sum(MonthlyData6$HospitalisedCovidCasesIndiv), sum(MonthlyData6$RequiringICUCovidCasesIndiv), sum(MonthlyData6$HealthcareWorkersCovidCasesIndiv))
+
+sum7<-c(sum(MonthlyData7$HospitalisedCovidCasesIndiv), sum(MonthlyData7$RequiringICUCovidCasesIndiv), sum(MonthlyData7$HealthcareWorkersCovidCasesIndiv))
+
+sum8<-c(sum(MonthlyData8$HospitalisedCovidCasesIndiv), sum(MonthlyData8$RequiringICUCovidCasesIndiv), sum(MonthlyData8$HealthcareWorkersCovidCasesIndiv))
+
+sum9<-c(sum(MonthlyData9$HospitalisedCovidCasesIndiv), sum(MonthlyData9$RequiringICUCovidCasesIndiv), sum(MonthlyData9$HealthcareWorkersCovidCasesIndiv))
+
+sum10<-c(sum(MonthlyData10$HospitalisedCovidCasesIndiv), sum(MonthlyData10$RequiringICUCovidCasesIndiv), sum(MonthlyData10$HealthcareWorkersCovidCasesIndiv))
+
+sum11<-c(sum(MonthlyData11$HospitalisedCovidCasesIndiv), sum(MonthlyData11$RequiringICUCovidCasesIndiv), sum(MonthlyData11$HealthcareWorkersCovidCasesIndiv))
+
+HospitalCases<-c(848, 1853, 507,6,61,52,220,780, 829)
+
+RequiringICUCases<-c(128,234,40,26,3,10,28,74,75)
+
+HealthcareWorkersCases<-c(782,5132,2013,229,217,228,594,1265,1549)
+
+Month<-c(03,04,05,06,07,08,09,10,11)
+
+MonthlyData<-data.frame(Month, HospitalCases,RequiringICUCases,HealthcareWorkersCases)
+
+MonthlyData_long<-melt(MonthlyData, id="Month")
+
+```
+<br>
+Cleaning for Age data involved separating required age groups from source dataset thereafter converting the cumulative data into daily counts and dividing date into year, month and day for better analysis. Also the 'NA' data has been removed and total on daily basis has been taken into consideration.
+<br>
+```{r}
+
+age <- data.frame(Aged1=data$Aged1, Aged15to24=data$Aged15to24, Aged1to4=data$Aged1to4, Aged25to34=data$Aged25to34, Aged35to44=data$Aged35to44, Aged45to54=data$Aged45to54, Aged55to64=data$Aged55to64, Aged5to14=data$Aged5to14, Aged65up=data$Aged65up,  date=data$StatisticsProfileDate)
+
+age <- age[!(is.na(age$Aged1) & is.na(age$Aged15to24) & is.na(age$Aged1to4) & is.na(age$Aged25to34) & is.na(age$Aged35to44) & is.na(age$Aged45to54) & is.na(age$Aged55to64) & is.na(age$Aged5to14) & is.na(age$Aged65up)),]
+
+age[is.na(age)] <- 0
+
+age <- age %>% mutate(Aged1_Daily = Aged1 - lag(Aged1, default = 0))
+age <- age %>% mutate(Aged15to24_Daily = Aged15to24 - lag(Aged15to24, default = 0))
+age <- age %>% mutate(Aged1to4_Daily = Aged1to4 - lag(Aged1to4, default = 0))
+age <- age %>% mutate(Aged25to34_Daily = Aged25to34 - lag(Aged25to34, default = 0))
+age <- age %>% mutate(Aged35to44_Daily = Aged35to44 - lag(Aged35to44, default = 0))
+age <- age %>% mutate(Aged45to54_Daily = Aged45to54 - lag(Aged45to54, default = 0))
+age <- age %>% mutate(Aged55to64_Daily = Aged55to64 - lag(Aged55to64, default = 0))
+age <- age %>% mutate(Aged5to14_Daily = Aged5to14 - lag(Aged5to14, default = 0))
+age <- age %>% mutate(Aged65up_Daily = Aged65up - lag(Aged65up, default = 0))
+
+age_daily <- subset( age, select = -c(Aged1,Aged15to24,Aged1to4,Aged25to34,Aged35to44,Aged45to54,Aged55to64,Aged5to14,Aged65up))
+
+fun <- function(x){ x[x < 0] <- 0; x; }
+
+age_daily <- apply(age_daily[-c(1)], 2, fun)
+
+age_daily <- data.frame(age_daily, date=age$date)
+age_daily$date <- as.Date(age_daily$date)
+
+dateSep <- separate(age_daily, "date", c("Year", "Month", "Day"), sep = "-")
+
+age_daily <- data.frame(age_daily, Year=dateSep$Year, Month=dateSep$Month, Day=dateSep$Day)
+age_daily$Day <- as.numeric(age_daily$Day)
+age_daily$Month <- as.numeric(age_daily$Month)
+age_daily$Month <- as.factor(age_daily$Month)
+
+total <- rowSums(subset( age_daily, select = -c(date,Year,Month,Day)))
+age_daily$total = total
+
+```
+
+Data cleaning for hospitalized age data involved similar steps as done above for age groups data.
+
+```{r}
+hosp_data <- data.frame(StatisticsProfileDate = data$StatisticsProfileDate,HospitalisedAged5 = data$HospitalisedAged5,HospitalisedAged5to14 = data$HospitalisedAged5to14,HospitalisedAged15to24 = data$HospitalisedAged15to24,HospitalisedAged25to34 = data$HospitalisedAged25to34,HospitalisedAged35to44 = data$HospitalisedAged35to44,HospitalisedAged45to54 = data$HospitalisedAged45to54,HospitalisedAged55to64 = data$HospitalisedAged55to64,HospitalisedAged65up = data$HospitalisedAged65up)
+
+
+hosp_data <- hosp_data %>% mutate(Aged5 = HospitalisedAged5 - lag(HospitalisedAged5, default = 0))
+hosp_data <- hosp_data %>% mutate(Aged5to14 = HospitalisedAged5to14 - lag(HospitalisedAged5to14, default = 0))
+hosp_data <- hosp_data %>% mutate(Aged15to24 = HospitalisedAged15to24 - lag(HospitalisedAged15to24, default = 0))
+hosp_data <- hosp_data %>% mutate(Aged25to34 = HospitalisedAged25to34 - lag(HospitalisedAged25to34, default = 0))
+hosp_data <- hosp_data %>% mutate(Aged35to44 = HospitalisedAged35to44 - lag(HospitalisedAged35to44, default = 0))
+hosp_data <- hosp_data %>% mutate(Aged45to54 = HospitalisedAged45to54 - lag(HospitalisedAged45to54, default = 0))
+hosp_data <- hosp_data %>% mutate(Aged55to64 = HospitalisedAged55to64 - lag(HospitalisedAged55to64, default = 0))
+hosp_data <- hosp_data %>% mutate(Aged65up = HospitalisedAged65up - lag(HospitalisedAged65up, default = 0))
+
+fun <- function(x){x[x < 0] <- 0; x;}
+
+hosp_daily <- subset(hosp_data,select = -c(HospitalisedAged5,HospitalisedAged5to14,HospitalisedAged15to24,HospitalisedAged25to34,HospitalisedAged35to44,HospitalisedAged45to54,HospitalisedAged55to64,HospitalisedAged65up))
+
+hosp_daily <- apply(hosp_daily[-c(1)], 2, fun)
+
+hosp_daily <- data.frame(hosp_daily, StatisticsProfileDate=hosp_data$StatisticsProfileDate)
+
+hosp_daily$StatisticsProfileDate <- as.Date(hosp_daily$StatisticsProfileDate)
+
+datePart <- separate(hosp_daily, "StatisticsProfileDate", c("Year", "Month", "Day"), sep = "-")
+
+hosp_daily <- data.frame(hosp_daily, datePart$Year, datePart$Month, datePart$Day)
+
+hosp_daily$datePart.Month <- as.factor(hosp_daily$datePart.Month)
+
+hosp_daily <- na.omit(hosp_daily)
+hosp_daily$total_per_day <- hosp_daily$Aged5+hosp_daily$Aged5to14+hosp_daily$Aged15to24+hosp_daily$Aged25to34+hosp_daily$Aged35to44+hosp_daily$Aged45to54+hosp_daily$Aged55to64+hosp_daily$Aged65up
+
+```
+
+<hr/>
+#### Data Preview
+```{r}
+library(DT)
+datatable(head(data,50))
+```
+
+
+
+<hr/>
+#### Data Description
+
+Below is a table containing the name of variables from the given dataset, as well as their data types and the details of what they contain.
+
+```{r message = FALSE, warning = FALSE}
+Variable.type <- lapply(data,class)
+Variable.desc <- c("Spatial X Co-ordinate",
+"Spatial Y Co-ordinate","Date for cases recorded",
+"ConfirmedCovidCases","TotalConfirmedCovidCases",
+"ConfirmedCovidDeaths","TotalCovidDeaths",
+"StatisticsProfileDate","CovidCasesConfirmedIndiv",
+"HospitalisedCovidCasesIndiv","RequiringICUCovidCasesIndiv",
+"HealthcareWorkersCovidCasesIndiv","Clusters Notified",
+"Hospitalised patients with Age 5 each day","Hospitalised patients with Age group 5to14 each day",
+"Hospitalised patients with Age group 15to24 each day",
+"Hospitalised patients with Age group 25to34 each day","Hospitalised patients with Age group 35to44 each day",
+"Hospitalised patients with Age group 45to54 each day","Hospitalised patients with Age group 55to64 each day",
+"Hospitalised patients with Age above 65 each day",
+"Total no of males infected by Covid each day","Total no of females infected by Covid each day",
+"Total no of people with no gender information missing infected by Covid each day","Covid cases with age 1 each day",
+"Covid cases with age group 1to4 each day","Covid cases with age group 5to14 each day",
+"Covid cases with age group 15to24 each day","Covid cases with age group 25to34 each day","Covid cases with age group 35to44 each day",
+"Covid cases with age group 45to54 each day","Covid cases with age group 55to64 each day","Covid cases with age above 65 each day","Covid cases with median age each day","Covid cases due to community transmission each day","Covid cases due to close contact each day","Covid cases due to travel abroad each day","Row Id")
+Variable.name1 <- colnames(data)
+data.desc <- as_data_frame(cbind(Variable.name1,Variable.type,Variable.desc))
+colnames(data.desc) <- c("Variable Name","Variable Data Type","Variable Description")
+kable(data.desc)
+
+```
+
+<hr/>
+
+### Explanatory Data Analysis {.tabset}
+In this section, a variety of distribution fittings, functions, graphical methods, and packages were used to acquire keen and meaningful insights from the Covid-19 dataset. Case counts, age groups of those infected, hospitalisation and medical status, as well as the transmission of the virus are discussed.
+
+#### Cases Statistics
+
+This part of the analysis investigates the relationship between the Daily Covid Cases and the Daily Death Cases.
+```{r}
+
+ggplot(GeneralTrends,aes(x=ConfirmedCovidCases, y=ConfirmedCovidDeaths))+
+  geom_point()+
+  geom_smooth()
+
+
+```
+
+The linear model looks like y= 211.076 + 6.282 x + e. The model can be interpreted as when there no deaths the Covid-19 cases are at 211 cases. When the cases start to rise by 100, the deaths are increasing by approximately 6. It can be seen that the Infection and death are correlated despite it being very weakly positive correlation of 0.2614, which would mean that despite Covid-19 being infectious and deadly, not many people die of it.
+
+```{r}
+
+p<-ggplot(DailyRates2_long, aes(x=StatisticsProfileDate, y=value))+
+    geom_line(aes(color=variable, group=variable))+
+    scale_colour_manual(values=c("darkred", "steelblue", "forestgreen", "goldenrod1"))
+                        
+fig<-ggplotly(p)
+
+fig <- fig %>% layout(dragmode = "pan")
+
+fig
+```
+
+The graph explains the daily trend of the Covid-19 infections. Each line represents a group of infected people: the ones that have been hospitalised, the healthcare workers and the people that require ICU care. The red line is the total amount of Daily Covid Cases that were confirmed. It can be seen that the highest amount of people infected were the healthcare workers as they were the ones that were closer to those infected. This will also be seen in the monthly rates below. The trends that were recorded can be said to represent the two waves of Covid that have occurred. The "Second Wave" started around 29th of July with 89 cases, however it can be seen that the daily increase of cases were fluctuating constantly but they were generally increasing. Looking at the graph during the "Second Wave", the daily incidence of highly affected people decreased, which meant that people required less hospitalisation as people could handle better the disease. 
+
+```{r}
+
+t<-ggplot(MonthlyData_long, aes(x=Month, y=value))+
+  geom_bar(aes(color=variable),stat="identity", position=position_dodge())+
+  scale_colour_manual(values=c("blue", "green", "yellow"))+
+  labs(title="Covid19 Monthly Occurance of Cases", y="Number of cases", x="Months", colour="Legend")
+  
+fig2<-ggplotly(t)
+
+fig2
+
+```
+
+From the Histogram, the monthly incidence of those affected can be seen; the healthcare workers were the most affected. Despite the Daily Covid Cases occurrence decreasing among the other groups, the amount of healthcare workers was decreasing at a lower rate; It was still very high compared to the other groups. It was interesting to see, as the issue of the healthcare workers being so affected was not really discussed in depth. Despite having PPE, the close contact with the infected people still led to the healthcare workers contracting Covid-19. 
+
+#### Age
+Age data represents the daily count for people that tested positive for COVID-19, divided into their different age groups. The goal for this section is to analyse the data and to see which age group is most vulnerable to the virus.
+```{r}
+#overall barplot per month
+agg <- aggregate(age_daily$total, by=list(month=age_daily$Month), FUN=sum)
+month_tot <- ggplot(data = agg,mapping = aes(x = month, y = x, color= month)) +
+     geom_bar(stat = "identity",position="dodge",width = 0.4) + geom_line(group=1)+ geom_point()+
+     geom_text(aes(label = paste("#", x, sep="")),size = 3, position = position_dodge(width=0.9) ,vjust = -0.5) + labs(x="Month",y="Total Count",title = "Total count of cases per month")
+month_tot
+```
+<br>
+The above graph shows the total count of positive cases for each month. The trend can be seen, as the total for the month of April is very high when compared to March and May. After that, the count suddenly dropped in June and then it increases gradually with the highest count in October.
+<br>
+To see which age group has the highest number of positive cases, barplot has been plot for the total count for each age group.
+<br>
+
+```{r}
+age_gr_total <- colSums(subset(age_daily, select = -c(date,Day,Month,Year,total)))
+age_gr_total <- data.frame(age_group = names(age_gr_total),total = data.frame(age_gr_total)$age_gr_total )
+age_gr_total <- age_gr_total[order(age_gr_total$total),]
+
+age_gr_tot <- ggplot(age_gr_total, aes(x=fct_reorder(age_group, total), y=total, fill=total)) +
+    geom_col(width = 0.5) + scale_fill_distiller(palette = "Reds", direction = 1) + theme_minimal() +  geom_text(aes(label = paste(total, sep="")),size = 3, position = position_dodge(width=0.9) ,vjust = -0.5) + 
+    theme(panel.grid = element_blank(),panel.grid.major.y = element_line(color = "white"),
+        panel.ontop = TRUE,axis.text.x = element_text(angle = 45)) + labs(x="Age Group",y="Total Count",title = "Total count of cases per age group")
+
+age_gr_tot + transition_states(age_group, wrap = FALSE) +
+    shadow_mark() + enter_grow() + enter_fade()
+```
+<br>
+Above, shows the total count of positive cases for each age group. Age group 15-24 has the highest number of cases, followed by age group 25-34. Whereas children under age 1 are the least affected.
+<br>
+
+<br>
+
+```{r animation2}
+
+dayData <- melt(age_daily,id=c("date","Year","Month","Day","total"))
+
+plot <- ggplot(dayData, aes(Day,value, col=variable)) + 
+    geom_line() + 
+    facet_wrap(~Month) + theme(panel.spacing = unit(2, "lines")) +labs(x="Day",y="Count",col="Age Groups",title = "Count of cases per month per age group")
+ggplotly(plot)
+
+```
+<br>
+The graph above shows the rate of growth in count for positive cases per day, per month, per age group. In April, the age group for 65 and above, was the highest with 427 cases on the 22nd of April 2020, whereas in October, the age group of 15-24 was the highest among other age groups with 366 cases on the 16th of October 2020.
+<br>
+In the months of June, July and August, the count was almost similar for all age groups with small discrepancies. 
+<br>
+Although the total positive cases was highest for the age group of 15-24, the differences can be seen in the rates of change of positive cases for the different age groups.
+<br>
+
+<h5>Gender Data</h5>
+When considering gender data, a graph can be plot to see the trend in the increase of count for male and female category. The goal is to analyze data and see which category, male or female, has more count of positive cases and the  to conclude which one of them is more vulnerable to the virus.
+<br>
+
+```{r gender} 
+gender <- data.frame(female = data$Female, male = data$Male,  date=data$StatisticsProfileDate)
+gender <- na.omit(gender)
+gender$date <- as.Date(gender$date)
+dateSep <- separate(gender, "date", c("Year", "Month", "Day"), sep = "-")
+gender <- data.frame(gender, Year=dateSep$Year, Month=dateSep$Month, Day=dateSep$Day)
+gender$Day <- as.numeric(gender$Day)
+gender$Month <- as.numeric(gender$Month)
+gender <- gender %>% mutate(female = female - lag(female, default = 0))
+gender <- gender %>% mutate(male = male - lag(male, default = 0))
+gender$female[gender$female < 0] <- 0
+gender$male[gender$male < 0] <- 0
+gender_daily <- melt(gender,id=c("date","Year","Month","Day"))
+
+gen_plot <- ggplot(gender_daily, aes(x=date,y=value,color=variable))+geom_point()+geom_line()+ labs(x="Date",y="Count",title = "Daily count of cases for gender category", color="Gender") 
+ggplotly(gen_plot)
+```
+<br>
+Looking at the graph above, the daily count for positive test cases of the virus (separated based on gender) is similar to that of the monthly total count as shown in the age section, with increases in the values of April and October. There is a sudden increase in the positive cases for male as well as females on the 21st and 22nd of April, with females being the highest one. Another sudden increase in positive cases can be seen on the 3rd of July (all females). This high point might affect the difference between total count of males and females.
+<br>    
+The pie chart below verifies the total count for females and males. Total positive cases for females are greater than that for males.
+<br>
+
+```{r}
+tot <- gender_daily %>% group_by(variable) %>% summarise(tot = sum(value))
+pie3D(tot$tot,labels=tot$tot,explode=0.1,
+      main="Total count for gender", col = c("darkgoldenrod1","darkgoldenrod4"))
+
+legend("topright", c("Female","Male"), cex = 0.8,fill = c("darkgoldenrod1","darkgoldenrod4"))
+```
+
+<hr/>
+#### Hospitalisation
+
+The trends in hospitalised cases on a daily basis due to Covid-19 were analysed by plotting the data on the monthly basis for each day.
+
+```{r message = FALSE, warning = FALSE}
+
+
+plot_ly(data = hosp_daily, x = ~datePart.Month, y = ~total_per_day, color=~datePart.Day) %>% layout(
+    title = "Daily cases month wise",
+    xaxis = list(title="Month"))
+```
+
+The month-wise daily total of all age groups in the graph depicts that there were 50-125 patients being hospitalised each month starting from March to the end of April. There was a sudden spike in the count for age groups above 65 on the 24th of April 2020. When "First Lockdown" was imposed, the curve began flattening with the decrease of cases on a daily basis in the months of June, July, August and mid-September. After the "Second Wave" (mid-September) starts, the case counts rise gradually in October and November for which Ireland faced "Second Lockdown". It can be taken as a success, as the cases come down after mid-October. <br>
+
+To achieve the goal of finding out which age group had the most and the least patients, the age group totals count were compared.
+
+```{r}
+total <- sapply(subset(hosp_daily, select = -c(StatisticsProfileDate,datePart.Month,datePart.Year,datePart.Day,total_per_day)),function(x){sum<-0
+sum(x)})
+
+n <- subset(hosp_daily, select = -c(StatisticsProfileDate,datePart.Month,datePart.Year,datePart.Day,total_per_day))
+
+sumdata=data.frame(value=apply(n,2,sum))
+sumdata$key=rownames(sumdata)
+options("scipen"=10)
+
+ggplot(data=sumdata, aes(x=fct_reorder(key, value), y=value, fill=key)) +
+  geom_bar(colour="black", stat="identity") +  theme(axis.text.x = element_text(angle = 45)) + labs(title = 'comparing total of age groups')
+```
+<br>
+
+If all of the age groups are compared for their total number of cases hospitalized till date, it can be see that people with the Age Group of above 65 years are most infected with more than 3,000 cases; this could be the reason why the government suggests for the elderly to stay at home. The Age Group of children up-to 5 and 5-14 are smaller which would be the result of shutting down schools. The Age Groups 15-24, 25-34, 35-44, 45-54, and 55-64 show a step-wise increase which states that though they are infected, that they have more capability to fight the virus than the other age groups.
+
+Later, people found infected in each age group were compared to the hospitalized numbers.
+
+```{r animation3}
+age_new <- filter(age_daily, date!="2020-03-16" & date!="2020-03-17" & date!="2020-03-18")
+hosp_age <- data.frame(hosp_daily,age_new)
+
+hosp_age <- data.frame(Aged1 = hosp_age$Aged1_Daily, Aged1to4 = hosp_age$Aged1to4_Daily, Hospitalised_Aged1to4 = hosp_age$Aged5, Aged5to14 = hosp_age$Aged5to14_Daily, Hospitalised_Aged5to14 = hosp_age$Aged5to14, Aged15to24 = hosp_age$Aged15to24_Daily, Hospitalised_Aged15to24 = hosp_age$Aged15to24, Aged25to34 = hosp_age$Aged25to34_Daily, Hospitalised_Aged25to34 = hosp_age$Aged25to34, Aged35to44 = hosp_age$Aged35to44_Daily, Hospitalised_Aged35to44 = hosp_age$Aged35to44, Aged45to54 = hosp_age$Aged45to54_Daily, Hospitalised_Aged45to54 = hosp_age$Aged45to54, Aged55to64 = hosp_age$Aged55to64_Daily, Hospitalised_Aged55to64 = hosp_age$Aged55to64, Aged65up = hosp_age$Aged65up_Daily, Hospitalised_Aged65up = hosp_age$Aged65up, date = hosp_age$date, Day = hosp_age$Day, Month = hosp_age$Month, Year = hosp_age$Year)
+
+hosp_age_merge <- melt(hosp_age,id=c("date","Year","Month","Day"))
+hosp_age_merge <- hosp_age_merge %>% mutate(col = ifelse(str_detect(hosp_age_merge$variable,"Hospitalised"),"cadetblue3","cadetblue2"))
+agg_age <- aggregate(hosp_age_merge$value, by=list(month=hosp_age_merge$Month,age=hosp_age_merge$variable,col=hosp_age_merge$col), FUN=sum)
+
+anim = ggplot(agg_age, aes(x=age, y=x, fill=col)) +
+    geom_bar(stat='identity',position="dodge",width = 0.6) +
+    geom_text(aes(y = 0, label = paste(age, " ")),  hjust = 1, size = 7) +
+    geom_text(aes(label = paste(x)),size = 6,position = position_dodge(width=0.9),hjust = -0.5 ) + 
+    coord_flip(clip = "off", expand = FALSE) +  
+    theme(axis.line=element_blank(),
+          axis.text.x=element_blank(),
+          axis.text.y=element_blank(),
+          axis.ticks=element_blank(),
+          axis.title.x=element_blank(),
+          axis.title.y=element_blank(),
+          legend.position="none",
+          panel.background=element_blank(),
+          panel.border=element_blank(),
+          panel.grid.major=element_blank(),
+          panel.grid.minor=element_blank(),
+          panel.grid.major.x = element_line( size=.1, color="grey" ),
+          panel.grid.minor.x = element_line( size=.1, color="grey" ),
+          plot.title=element_text(size=25, hjust=0.5, face="bold", colour="black",vjust=1),
+          plot.subtitle=element_text(size=20, hjust=0.5,  colour="grey",vjust=1),
+          plot.background=element_blank(),
+          plot.margin = margin(1,4, 1, 8, "cm")) +
+    transition_states(states = month, transition_length = 9, state_length = 1) +
+    ease_aes('sine-in-out') +
+    labs(title = 'Increase in age group count per month',subtitle = 'Month: {closest_state}')
+
+ animate(anim, nframes = 600,fps = 30,  width = 1200, height = 800, renderer = gifski_renderer("ageGroups.gif"))
+```
+
+This graph illustrates that the people actually infected were more in each group than the ones being hospitalized which shows that this virus is curable by taking basic precautionary steps at home.
+<hr/>
+
+
+#### Transmission
+
+Within the dataset, there were three different types of transmission for the COVID-19 cases that tested positive; 1. Travel Abroad, 2. Community Transmission, 3. Close Contact. It was important to ascertain whether the data contained within these columns were cumulative, or whether they were values representing the cases coming in on the day. The three transmission categories were not cumulative, and so were treated on a day-to-day basis.
+
+Below is an interactive line-graph which displays the overall transmission trends over time. Since it was not possible to extract this data and immediately put it into the graph, it was decided to create a data frame that would extract the necessary data from the dataset which would make it easier to code with as well as graphically display.
+
+
+```{r fig=1, fig.width=10, fig.height=6}
+
+TA <- replicate(length(clean$TravelAbroad), "Travelling Abroad")
+CT <- replicate(length(clean$CommunityTransmission), "Community Transmission")
+CC <- replicate(length(clean$CloseContact), "Close Contact")
+
+DBData <- data.frame(date = timeframe, Transmission_Type = c(TA, CT, CC), cases = c(clean$TravelAbroad, clean$CommunityTransmission, clean$CloseContact))
+
+cae <- ggplot(DBData) +
+        geom_line(aes(x=date, y = cases, colour = Transmission_Type)) +
+        scale_color_viridis(discrete = TRUE) +
+        theme_light() +
+        ggtitle("COVID-19 Transmission")
+
+ggplotly(cae)
+```
+
+The graph above shows the following;
+1. Community Transmission was the main cause for the transmission of COVID-19 until the 26th of May 2020,
+2. Close Contact was the third cause for the transmission of COVID-19 until the 26th of May 2020,
+3. Close Contact is the main cause for COVID-19 transmission now,
+4. Travelling Abroad is the least likely cause for COVID-19 transmission with 1 case per day as of the 2nd of November 2020,
+5. Community Transmission is the second most likely transmission,
+6. Close Contact is the only transmission trend that has gone up - this could be an indication that some quarantine guidelines are not being upheld properly,
+7. Travel Abroad has shown a significant decline which is a reflection of travel restrictions as well as quarantine guidelines.
+
+
+Transmission and Daily Covid Cases Correlation - Since this section looks at the transmission of COVID-19, ascertaining the correlation between the transmission types and the number of people testing positive for Covid-19 would be a way in which to find the strength of association that these factors have on one another.
+
+From the correlation values, it is easy to tell that the association between Close Contact and Confirmed Covid Cases is the highest.
+
+```{r fig=2, fig.width=8, fig.height=6}
+
+cTA <- cor(clean$TravelAbroad, clean$ConfirmedCovidCases)
+cCT <- cor(clean$CommunityTransmission, clean$ConfirmedCovidCases)
+cCC <- cor(clean$CloseContact, clean$ConfirmedCovidCases)
+
+corDB2 <- data.frame(Correlation_Value = c(cTA, cCT, cCC), transmission <- c("Travel Abroad", "Community Transmission", "Close Contact"))
+
+cae2 <- ggplot(corDB2, aes(x=transmission, y=Correlation_Value)) +
+  geom_bar(stat = "identity")
+
+cae2
+
+```
+
+The SIR (Susceptible, Infected, Removed/Recovered) Model serves as a way in which we can tell the R value through further study. The R value is a measure of the number of new infections that an infected person is able to give during their own time of infection. "Susceptible" represents the population of people who are able to catch COVID-19, "Infected" are those that have caught COVID-19, and "Removed" are the ones who have either survived it or have died from it (i.e. unable to catch it again). Since the exact number of Susceptibles in Ireland is unknown, an estimation of 400,000 of the population of the Republic of Ireland was taken.
+
+Below, is graphed what the SIR Model would look (at the current time) like if 0.10 of the population are Susceptible.
+
+```{r pressure}
+## SIR MODEL FUNCTION
+sir <- function(time, state, parameters) {
+
+  with(as.list(c(state, parameters)), {
+
+    dS <- -beta * S * I
+    dI <-  beta * S * I - gamma * I
+    dR <-                 gamma * I
+
+    return(list(c(dS, dI, dR)))
+  })
+}
+## Parameters
+init       <- c(S = 1-1e-6, I = 1e-6, R = 0.0)
+
+parameters <- c(beta = 1.4247, gamma = 0.14286)
+
+ire_population <- 400000
+
+Susceptible <- ((ire_population - clean$TotalConfirmedCovidCases) - clean$TotalCovidDeaths) / ire_population
+Infected <- clean$TotalConfirmedCovidCases / ire_population
+Removed <- clean$TotalCovidDeaths / ire_population
+Recovered <- Infected - Removed
+
+times  <- seq(1, length(Susceptible), by = 1)
+rise <- ode(y = init, times = times, func = sir, parms = parameters)
+# Data frame
+rise <- data.frame(S = Susceptible, I = Infected, R = Removed, Rec = Recovered)
+rise$time <- NULL
+
+## Plot
+matplot(x = times, y = rise, type = "l",
+        xlab = "Time", ylab = "Susceptible and Deaths", main = "SIR Model",
+        lwd = 1, lty = 1, bty = "l", col = 1:4)
+legend(40, 0.7, c("Susceptible", "Infected", "Deaths", "Recovered"), pch = 1, col = 1:4, bty = "n")
+
+```
+
+### Summary
+Looking at the case studies, it could be clearly seen that Covid-19 has affected a lot of people. It had two waves of highly increased cases which were in April to May and the second was from the end of July to current date. It affected the population greatly as people were dying and many were hospitalised daily. However, during the "Second Wave", despite the fact that the daily rate of confirmed cases is increasing, the healthcare system is able to handle the virus much better than before.
+
+The transmission of Covid-19 was heavily influenced by Community Transmission at the start, however was overtaken by Close Contact as of the 26th of May 2020. This could be a sign that whilst public social distancing measures are being upheld by the Irish population, gatherings of friends and families are not within the regulation guidelines. The confirmed cases that had been abroad has dramatically decreased, showing that the enacted travelling restrictions have worked. When looking at the SIR Model graph, the "Recovered" and "Dead" cases reflect the way that Ireland has handled Covid-19 which coincides with the Case Statistics Analysis.
+
+The most cases being hospitalized were the people above 65. Children were less affected which might be the reason that the government suggested for the elderly to stay at home. The younger age groups were less likely to be hospitalized in comparison to the older ones as they appeared to have a greater chance of recovering without intense care. Also people using hospital facilities are less than the ones detected with the virus which states that this virus can be cured by taking precautions and medication at home.
+
+After analyzing the gender data, it was apparent that females are more prone to the virus when compared to males with a significantly higher number of cases; 1,771 cases on a particular day in July for females. When age groups are considered, even if the age group 15-24 has the highest count for positive cases, the discrepancies can be seen in the total count when analysed month-wise with the age group of 65+ being at its highest in April and the age group of 15-24 being at its peak in October.
