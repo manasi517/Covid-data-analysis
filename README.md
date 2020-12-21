@@ -1,6 +1,6 @@
 # Covid-data-analysis
 
-Covid-data-analysis aims to analyze daily count of covid cases for various months. The data is devided into daily count of number of cases and cumulative count divided into multiple groups.
+Covid-data-analysis aims to analyze daily count of covid cases for various months. The data is divided into daily count of number of cases and cumulative count divided into multiple groups.
 Cumulative data divided into below groups:
 * Age groups
 * Hospitalized Age groups
